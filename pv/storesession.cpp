@@ -111,8 +111,7 @@ bool StoreSession::start()
 				ldata->logic_segments();
 
 			if (lsegments.empty()) {
-				error_ = tr("Can't save logic channel without data.");
-				return false;
+				continue;
 			}
 
 			lsegment = lsegments.front();
@@ -127,8 +126,7 @@ bool StoreSession::start()
 				adata->analog_segments();
 
 			if (asegments.empty()) {
-				error_ = tr("Can't save analog channel without data.");
-				return false;
+				continue;
 			}
 
 			asegment_list.push_back(asegments.front());
@@ -138,36 +136,40 @@ bool StoreSession::start()
 		}
 	}
 
-	if (!any_segment) {
-		error_ = tr("No channels enabled.");
-		return false;
-	}
+	if (any_segment)
+	{
+		// Check whether the user wants to export a certain sample range
+		uint64_t end_sample;
 
-	// Check whether the user wants to export a certain sample range
-	uint64_t end_sample;
+		if (sample_range_.first == sample_range_.second)
+		{
+			// No sample range specified, save everything we have
+			start_sample_ = 0;
+			sample_count_ = any_segment->get_sample_count();
+		}
+		else
+		{
+			if (sample_range_.first > sample_range_.second)
+			{
+				start_sample_ = sample_range_.second;
+				end_sample = min(sample_range_.first, any_segment->get_sample_count());
+				sample_count_ = end_sample - start_sample_;
+			}
+			else
+			{
+				start_sample_ = sample_range_.first;
+				end_sample = min(sample_range_.second, any_segment->get_sample_count());
+				sample_count_ = end_sample - start_sample_;
+			}
+		}
 
-	if (sample_range_.first == sample_range_.second) {
-		// No sample range specified, save everything we have
-		start_sample_ = 0;
-		sample_count_ =	any_segment->get_sample_count();
-	} else {
-		if (sample_range_.first > sample_range_.second) {
-			start_sample_ = sample_range_.second;
-			end_sample = min(sample_range_.first, any_segment->get_sample_count());
-			sample_count_ = end_sample - start_sample_;
-		} else {
-			start_sample_ = sample_range_.first;
-			end_sample = min(sample_range_.second, any_segment->get_sample_count());
-			sample_count_ = end_sample - start_sample_;
+		// Make sure the sample range is valid
+		if (start_sample_ > any_segment->get_sample_count())
+		{
+			error_ = tr("Can't save range without sample data.");
+			return false;
 		}
 	}
-
-	// Make sure the sample range is valid
-	if (start_sample_ > any_segment->get_sample_count()) {
-		error_ = tr("Can't save range without sample data.");
-		return false;
-	}
-
 	// Begin storing
 	try {
 		const auto context = session_.device_manager().context();
@@ -182,7 +184,7 @@ bool StoreSession::start()
 		output_ = output_format_->create_output(file_name_, device, options);
 		auto meta = context->create_meta_packet(
 			{{ConfigKey::SAMPLERATE, Glib::Variant<guint64>::create(
-				any_segment->samplerate())}});
+				any_segment ? any_segment->samplerate() : 1.0)}});
 		output_->receive(meta);
 	} catch (Error& error) {
 		error_ = tr("Error while saving: ") + error.what();
@@ -195,7 +197,7 @@ bool StoreSession::start()
 	// Save session setup if we're saving to srzip and the user wants it
 	GlobalSettings settings;
 	bool save_with_setup = settings.value(GlobalSettings::Key_General_SaveWithSetup).toBool();
-
+	printf("save with setup: %d %s\n", save_with_setup, output_format_->name().c_str());
 	if ((output_format_->name() == "srzip") && (save_with_setup)) {
 		QString setup_file_name = QString::fromStdString(file_name_);
 		setup_file_name.truncate(setup_file_name.lastIndexOf('.'));

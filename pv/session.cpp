@@ -824,11 +824,6 @@ void Session::start_capture(function<void (const QString)> error_handler)
 	shared_ptr<devices::HardwareDevice> hw_device =
 		dynamic_pointer_cast< devices::HardwareDevice >(device_);
 
-	if (hw_device) {
-		name_ = default_name_;
-		name_changed();
-	}
-
 	// Begin the session
 	sampling_thread_ = std::thread(&Session::sample_thread_proc, this, error_handler);
 }
